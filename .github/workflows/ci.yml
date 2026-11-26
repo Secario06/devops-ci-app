@@ -128,3 +128,38 @@ jobs:
         run: |
           docker push "${IMAGE_NAME}:${GITHUB_SHA}"
           docker push "${IMAGE_NAME}:latest"
+
+  deploy:
+    needs: image
+    # только push в main; для pull_request задание пропускается (skipped)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, devops-vm]
+    permissions:
+      contents: read
+    concurrency:
+      group: deploy-devops-vm
+      cancel-in-progress: false
+    env:
+      VM_HOST: 192.168.56.103
+      ANSIBLE_FORCE_COLOR: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false   # токен для git push заданию не нужен
+
+      - name: Deploy with Ansible
+        working-directory: ansible
+        # -e имеет наивысший приоритет: разворачивается SHA этого запуска,
+        # group_vars/all.yml не изменяется
+        run: ansible-playbook site.yml -e "app_tag=${GITHUB_SHA}"
+
+      - name: Check through Nginx
+        run: |
+          set -euo pipefail
+          # --fail: HTTP 4xx/5xx -> ненулевой код; --retry-all-errors: повтор и при отказе соединения
+          health=$(curl --fail --silent --show-error --max-time 5 \
+            --retry 5 --retry-delay 2 --retry-all-errors "http://${VM_HOST}/health")
+          echo "/health: ${health}"
+          python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d.get("status")=="ok", d' "${health}"
+          echo "/: $(curl --fail --silent --show-error --max-time 5 "http://${VM_HOST}/")"

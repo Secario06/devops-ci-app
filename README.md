@@ -10,3 +10,5 @@ CI: Pylint → pytest → Docker build → smoke-test → GHCR.
 - health endpoint: `/health`;
 - образ: `ghcr.io/secario06/devops-ci-app`;
 - основной workflow: `.github/workflows/ci.yml`.
+
+Проверенный образ публикуется в GHCR по полному SHA коммита и тегу `latest`.
